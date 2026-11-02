@@ -1,0 +1,22 @@
+# Environment secrets
+.env
+
+# Virtual environment
+.venv/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Test cache
+.pytest_cache/
+
+# Logs
+*.log
+
+# IDE
+.vscode/
+.idea/
+
+#DEMO FILE
+demo_self_healing.py
