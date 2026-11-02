@@ -46,6 +46,22 @@ textarea::placeholder{color:var(--dim)}
 .verdict h2{font-size:1.6rem;font-weight:500;letter-spacing:-.03em}
 .verdict h2.no{color:var(--bad)}
 .verdict p{color:var(--mid);font-size:14px}
+.question-card{margin-top:18px;padding:16px 18px;border:1px solid var(--line);border-radius:12px;background:linear-gradient(135deg,#101510,#090909)}
+.eyebrow{display:block;color:var(--dim);font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;margin-bottom:6px}
+.question-card p{font-size:16px;line-height:1.55;overflow-wrap:anywhere}
+.result-summary{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 0 14px;color:var(--mid);font-size:13px}
+.result-summary strong{color:var(--fg);font-weight:500}
+.result-badge{border:1px solid #244333;background:#0d1a12;color:#9be3b6;border-radius:999px;padding:4px 9px;font-size:12px;white-space:nowrap}
+.tbl{border-color:var(--line2);border-radius:10px}
+tbody tr:nth-child(even){background:#080808}
+tbody tr:hover{background:#111}
+th{background:#090909;text-transform:none;letter-spacing:0}
+details.disclosure{border:1px solid var(--line);border-radius:10px;padding:0 14px;margin-top:14px}
+details.disclosure>summary{cursor:pointer;list-style:none;padding:14px 0;color:var(--mid);font-size:14px}
+details.disclosure>summary::-webkit-details-marker{display:none}
+details.disclosure>summary:after{content:'＋';float:right;color:var(--dim)}
+details.disclosure[open]>summary:after{content:'−'}
+details.disclosure .sec{padding:14px 0;border-bottom:0}
 .sec{padding:28px 0;border-bottom:1px solid var(--line)}
 .sec-h{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px;gap:12px}
 .sec-h h3{font-size:14px;font-weight:500;color:var(--mid)}
@@ -209,60 +225,29 @@ function render(d) {
     v.append(el('h2', 'no', 'Refused'));
     v.append(el('p', null, 'Nothing was run against the database.'));
   } else {
-    v.append(el('h2', 'no', 'Query failed'));
-    v.append(el('p', null, (ex && ex.error) || 'The query did not complete.'));
+    v.append(el('h2', 'no', 'Query couldn’t be completed'));
+    v.append(el('p', null, 'Please rephrase your question and try again.'));
   }
   root.append(v);
 
-  const sqls = [['Final', d.sanitized_sql], ['Generated', d.generated_sql === 'REFUSAL' ? null : d.generated_sql]].filter(s => s[1]);
-  if (sqls.length) {
-    const sec = el('div', 'sec'), h = el('div', 'sec-h'), tabs = el('div', 'tabs'), pre = el('pre');
-    h.append(el('h3', null, 'SQL'));
-    const copy = el('button', 'link', 'Copy');
-    let cur = 0;
-    const show = i => { cur = i; pre.innerHTML = hl(sqls[i][1]); [...tabs.children].forEach((b, j) => b.setAttribute('aria-pressed', j === i)); };
-    sqls.forEach((s, i) => { const b = el('button', null, s[0]); b.onclick = () => show(i); tabs.append(b); });
-    copy.onclick = async () => { try { await navigator.clipboard.writeText(sqls[cur][1]); copy.textContent = 'Copied'; setTimeout(() => copy.textContent = 'Copy', 1400); } catch (e) {} };
-    h.append(sqls.length > 1 ? tabs : el('span')); h.append(copy);
-    sec.append(h, pre); root.append(sec); show(0);
-  }
-
-  const sec = el('div', 'sec'), dl = el('dl', 'checks');
-  const add = (k, val, bad) => { const w = el('div'); w.append(el('dt', null, k), el('dd', bad ? 'no' : '', val)); dl.append(w); };
-  add('Safety', d.is_safe ? 'Passed' : 'Blocked', !d.is_safe);
-  add('Matches your question', d.is_semantically_aligned ? 'Yes' : 'No', !d.is_semantically_aligned);
-  add('Alignment score', String(d.heuristic_alignment_score));
-  add('Invented columns', d.is_hallucinated ? 'Yes' : 'None', d.is_hallucinated);
-  add('Attempts', String(d.attempts) + (d.was_healed ? ' (auto-fixed)' : ''));
-  const ch = el('div', 'sec-h'); ch.append(el('h3', null, 'Checks'));
-  sec.append(ch, dl); root.append(sec);
+  const prompt = el('div', 'question-card');
+  prompt.append(el('span', 'eyebrow', 'Your question'), el('p', null, d.question || 'Query results'));
+  root.append(prompt);
 
   if (ex && ex.success && ex.rows.length) {
     const s2 = el('div', 'sec'); const h = el('div', 'sec-h'); h.append(el('h3', null, 'Results')); s2.append(h);
+    const summary = el('div', 'result-summary');
+    summary.append(el('span', null, 'Showing ' + ex.rows.length + ' ' + (ex.rows.length === 1 ? 'row' : 'rows')),
+      el('span', 'result-badge', 'Ready'));
     const wrap = el('div', 'tbl'), t = el('table'), thead = el('thead'), tr = el('tr');
     const isNum = c => ex.rows.every(r => r[c] == null || typeof r[c] === 'number');
     ex.columns.forEach(c => tr.append(el('th', isNum(c) ? 'n' : '', c))); thead.append(tr); t.append(thead);
     const tb = el('tbody');
-    ex.rows.forEach(r => { const row = el('tr'); ex.columns.forEach(c => { const val = r[c]; row.append(el('td', val == null ? 'nul' : isNum(c) ? 'n' : '', val == null ? 'null' : String(val))); }); tb.append(row); });
-    t.append(tb); wrap.append(t); s2.append(wrap); root.append(s2);
+    ex.rows.forEach(r => { const row = el('tr'); ex.columns.forEach(c => { const val = r[c]; row.append(el('td', val == null ? 'nul' : isNum(c) ? 'n' : '', val == null ? 'null' : typeof val === 'object' ? JSON.stringify(val) : String(val))); }); tb.append(row); });
+    t.append(tb); wrap.append(t); s2.append(summary, wrap); root.append(s2);
   } else if (ex && ex.success) {
-    const s2 = el('div', 'sec'); s2.append(el('p', null, 'The query ran but returned no rows.')); root.append(s2);
+    const s2 = el('div', 'sec'); s2.append(el('h3', null, 'Results'), el('p', null, 'The query ran successfully but returned no matching rows.')); root.append(s2);
   }
-
-  const list = (items, title, warn) => {
-    if (!items || !items.length) return;
-    const s = el('div', 'sec'), h = el('div', 'sec-h'); h.append(el('h3', null, title)); s.append(h);
-    const ul = el('ul', 'msgs' + (warn ? ' warn' : ''));
-    items.forEach(m => {
-      const li = el('li'), match = /^\[([A-Z_]+)\]\s*(.*)$/.exec(m);
-      if (match) { li.append(el('code', null, match[1]), document.createTextNode(explain(match[1]) || match[2])); }
-      else li.textContent = m;
-      ul.append(li);
-    });
-    s.append(ul); root.append(s);
-  };
-  list(d.errors, 'Why it failed', false);
-  list(d.warnings, 'Notes', true);
 
   out.replaceChildren(root);
 }
