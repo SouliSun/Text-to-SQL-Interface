@@ -4,6 +4,7 @@ from typing import Dict, Any
 from app.pipeline import TextToSQLPipeline, TextToSQLResponse
 from app.db.connection import verify_deployment_security
 from app.hallucination.schema_catalog import SchemaCatalogProvider
+from .auth import current_user
 
 router = APIRouter()
 pipeline = TextToSQLPipeline()
@@ -19,7 +20,7 @@ def health_check() -> Dict[str, Any]:
     return {"status": "healthy", "security": security_status}
 
 @router.post("/query", response_model=TextToSQLResponse, tags=["Query"])
-def run_query(request: QueryRequest) -> TextToSQLResponse:
+def run_query(request: QueryRequest, user: dict = Depends(current_user)) -> TextToSQLResponse:
     response = pipeline.query(request.question)
     return response
 

@@ -20,13 +20,11 @@ button,textarea,input{font:inherit;color:inherit}
 button{cursor:pointer;background:none;border:0}
 :focus-visible{outline:2px solid var(--fg);outline-offset:3px}
 .wrap{max-width:880px;margin:0 auto;padding:0 24px}
-header{display:flex;justify-content:space-between;align-items:center;padding:28px 0}
+header{display:flex;justify-content:space-between;align-items:center;padding:28px 0;gap:16px}
 .mark{font-weight:600;letter-spacing:-.02em}
+.who{display:flex;align-items:center;gap:16px;color:var(--dim);font-size:14px}
 .link{color:var(--mid);font-size:14px;border-bottom:1px solid var(--line2);padding-bottom:1px}
 .link:hover{color:var(--fg);border-color:var(--fg)}
-#endpoint-row{display:none;padding-bottom:12px}
-#endpoint-row.open{display:block}
-#endpoint{width:100%;background:none;border:1px solid var(--line2);border-radius:6px;padding:10px 12px;font:400 13px var(--mono);color:var(--mid)}
 h1{font-weight:500;font-size:clamp(2.8rem,9vw,6.4rem);line-height:.95;letter-spacing:-.055em;margin:9vh 0 48px}
 h1 span{color:var(--dim)}
 .ask{border-bottom:1px solid var(--line2);transition:border-color .2s}
@@ -73,7 +71,7 @@ td.nul{color:var(--dim)}
 .msgs.warn code{color:var(--mid)}
 .hist{margin:24px 0 80px}
 .hist h3{font-size:14px;font-weight:500;color:var(--dim);margin-bottom:8px}
-.hist button{display:block;width:100%;text-align:left;padding:10px 0;border-bottom:1px solid var(--line);color:var(--mid);font-size:15px;display:flex;justify-content:space-between;gap:16px}
+.hist button{width:100%;text-align:left;padding:10px 0;border-bottom:1px solid var(--line);color:var(--mid);font-size:15px;display:flex;justify-content:space-between;gap:16px}
 .hist button:hover{color:var(--fg)}
 .hist small{color:var(--dim);font-size:13px;flex:none}
 .hist small.no{color:var(--bad)}
@@ -81,12 +79,15 @@ td.nul{color:var(--dim)}
 </style>
 </head>
 <body>
-<div class="wrap">
+<!-- Hidden until we confirm the user is signed in, so there's no flash of the app. -->
+<div class="wrap" id="app" hidden>
   <header>
     <span class="mark">Ask SQL</span>
-    <button class="link" id="toggle-ep" aria-expanded="false">API endpoint</button>
+    <div class="who">
+      <span id="user-email"></span>
+      <button class="link" id="signout">Sign out</button>
+    </div>
   </header>
-  <div id="endpoint-row"><input id="endpoint" aria-label="API endpoint" value="http://127.0.0.1:8000/api/v1/query" spellcheck="false"></div>
 
   <h1>Ask your<br><span>database.</span></h1>
 
@@ -103,18 +104,31 @@ td.nul{color:var(--dim)}
   <section class="hist" id="hist" hidden><h3>This session</h3><div id="hist-list"></div></section>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="config.js"></script>
 <script>
 const $ = s => document.querySelector(s);
-const q = $('#q'), run = $('#run'), out = $('#out'), ep = $('#endpoint');
+const API_URL = '/api/v1/query';   // same origin as this page, so no CORS needed
+
+/* ---------- Auth guard ---------- */
+const toLogin = () => location.replace('/login.html');
+
+sb.auth.getSession().then(({ data }) => {
+  if (!data.session) return toLogin();
+  $('#user-email').textContent = data.session.user.email || '';
+  $('#app').hidden = false;
+  q.focus();
+});
+
+// Fires when the user signs out (here or in another tab) or the session can't be refreshed.
+sb.auth.onAuthStateChange((event, session) => { if (!session) toLogin(); });
+
+$('#signout').addEventListener('click', () => sb.auth.signOut());
+
+/* ---------- App ---------- */
+const q = $('#q'), run = $('#run'), out = $('#out');
 const history = [];
 const SUGGESTIONS = ["give me all the product categories", "how many products are in each category", "show the 5 most expensive products", "create an empty table named users"];
-
-try { const s = localStorage.getItem('ask-sql-endpoint'); if (s) ep.value = s; } catch (e) {}
-ep.addEventListener('change', () => { try { localStorage.setItem('ask-sql-endpoint', ep.value.trim()); } catch (e) {} });
-$('#toggle-ep').addEventListener('click', e => {
-  const open = $('#endpoint-row').classList.toggle('open');
-  e.currentTarget.setAttribute('aria-expanded', open);
-});
 
 SUGGESTIONS.forEach(t => {
   const b = document.createElement('button'); b.textContent = t;
@@ -136,14 +150,39 @@ q.addEventListener('input', autosize);
 q.addEventListener('keydown', e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey || !e.shiftKey)) { e.preventDefault(); ask(); } });
 run.addEventListener('click', ask);
 
+function showError(title, message) {
+  const box = el('div'), v = el('div', 'verdict');
+  v.append(el('h2', 'no', title), el('p', null, message));
+  box.append(v); out.replaceChildren(box);
+}
+
 async function ask() {
   const question = q.value.trim();
   if (!question || run.disabled) return;
+
+  // getSession() auto-refreshes the token if it's close to expiring.
+  const { data: { session } } = await sb.auth.getSession();
+  if (!session) return toLogin();
+
   run.disabled = true; run.textContent = 'Running…';
   out.replaceChildren(el('div', 'load'));
   let reached = false;
   try {
-    const res = await fetch(ep.value.trim(), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ question }) });
+    const res = await fetch(API_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + session.access_token,
+      },
+      body: JSON.stringify({ question }),
+    });
+
+    // Token rejected by the API: end the session and go back to login.
+    if (res.status === 401) { await sb.auth.signOut(); return; }
+
+    if (res.status === 403) { showError('Not allowed', 'Your account does not have access to this.'); return; }
+    if (res.status === 429) { showError('Too many requests', 'Wait a moment and try again.'); return; }
+
     let data; try { data = await res.json(); } catch (e) { throw new Error('The server answered with something that isn’t JSON (HTTP ' + res.status + ').'); }
     if (!res.ok && !data.question) throw new Error(typeof data.detail === 'string' ? data.detail : 'The server returned HTTP ' + res.status + '.');
     reached = true;
@@ -151,10 +190,10 @@ async function ask() {
     history.unshift({ question, ok: !!(data.execution_result && data.execution_result.success), refused: data.generated_sql === 'REFUSAL' || !data.is_safe });
     renderHistory();
   } catch (err) {
-    const box = el('div'); 
-    const v = el('div', 'verdict'); v.append(el('h2', 'no', reached ? 'Couldn’t display the response' : 'Couldn’t reach the API'));
-    v.append(el('p', null, reached ? err.message : err instanceof TypeError ? 'Check that the server is running at ' + ep.value.trim() + ' and that CORS allows this page.' : err.message));
-    box.append(v); out.replaceChildren(box);
+    showError(
+      reached ? 'Couldn’t display the response' : 'Couldn’t reach the API',
+      reached ? err.message : err instanceof TypeError ? 'Check that the server is running and reachable.' : err.message
+    );
   } finally { run.disabled = false; run.textContent = 'Run query'; }
 }
 
@@ -204,7 +243,7 @@ function render(d) {
     const isNum = c => ex.rows.every(r => r[c] == null || typeof r[c] === 'number');
     ex.columns.forEach(c => tr.append(el('th', isNum(c) ? 'n' : '', c))); thead.append(tr); t.append(thead);
     const tb = el('tbody');
-    ex.rows.forEach(r => { const row = el('tr'); ex.columns.forEach(c => { const val = r[c]; const td = el('td', val == null ? 'nul' : isNum(c) ? 'n' : '', val == null ? 'null' : String(val)); row.append(td); }); tb.append(row); });
+    ex.rows.forEach(r => { const row = el('tr'); ex.columns.forEach(c => { const val = r[c]; row.append(el('td', val == null ? 'nul' : isNum(c) ? 'n' : '', val == null ? 'null' : String(val))); }); tb.append(row); });
     t.append(tb); wrap.append(t); s2.append(wrap); root.append(s2);
   } else if (ex && ex.success) {
     const s2 = el('div', 'sec'); s2.append(el('p', null, 'The query ran but returned no rows.')); root.append(s2);

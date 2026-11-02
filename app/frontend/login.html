@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sign in · Ask SQL</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#000; --fg:#fff; --mid:#a1a1a1; --dim:#5c5c5c; --line2:#333; --bad:#ff5c5c;
+  --sans:"Geist",ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;
+  color-scheme:dark;
+}
+*{box-sizing:border-box;margin:0}
+html{background:var(--bg)}
+body{background:var(--bg);color:var(--fg);font:400 16px/1.55 var(--sans);-webkit-font-smoothing:antialiased;min-height:100vh}
+button,input{font:inherit;color:inherit}
+button{cursor:pointer;background:none;border:0}
+:focus-visible{outline:2px solid var(--fg);outline-offset:3px}
+.wrap{max-width:880px;margin:0 auto;padding:0 24px}
+header{padding:28px 0}
+.mark{font-weight:600;letter-spacing:-.02em}
+h1{font-weight:500;font-size:clamp(2.8rem,9vw,6.4rem);line-height:.95;letter-spacing:-.055em;margin:9vh 0 48px}
+h1 span{color:var(--dim)}
+form{display:grid;gap:12px;max-width:360px}
+input{background:none;border:1px solid var(--line2);border-radius:6px;padding:12px;font-size:16px}
+input::placeholder{color:var(--dim)}
+input:focus{outline:0;border-color:var(--fg)}
+.run{background:var(--fg);color:var(--bg);font-weight:500;padding:12px 22px;border-radius:999px;margin-top:8px;transition:transform .15s,opacity .15s}
+.run:hover{transform:translateY(-1px)}
+.run[disabled]{opacity:.4;cursor:progress;transform:none}
+.err{color:var(--bad);font-size:14px;min-height:1.5em}
+.note{color:var(--dim);font-size:13px;margin-top:24px;max-width:360px}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header><span class="mark">Ask SQL</span></header>
+
+  <h1>Sign <span>in.</span></h1>
+
+  <form id="login-form">
+    <input id="email" type="email" placeholder="Email" autocomplete="username" required autofocus>
+    <input id="password" type="password" placeholder="Password" autocomplete="current-password" required>
+    <button class="run" id="submit" type="submit">Sign in</button>
+    <p class="err" id="err" role="alert"></p>
+  </form>
+  <p class="note">Accounts are created by the administrator. If you need access, ask them to add you.</p>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="config.js"></script>
+<script>
+const $ = s => document.querySelector(s);
+
+// Already signed in? Skip straight to the app.
+sb.auth.getSession().then(({ data }) => {
+  if (data.session) location.replace('/');
+});
+
+$('#login-form').addEventListener('submit', async e => {
+  e.preventDefault();
+  const btn = $('#submit');
+  btn.disabled = true; btn.textContent = 'Signing in…';
+  $('#err').textContent = '';
+
+  const { error } = await sb.auth.signInWithPassword({
+    email: $('#email').value.trim(),
+    password: $('#password').value,
+  });
+
+  if (error) {
+    $('#err').textContent = error.message;
+    btn.disabled = false; btn.textContent = 'Sign in';
+    return;
+  }
+  location.replace('/');
+});
+</script>
+</body>
+</html>

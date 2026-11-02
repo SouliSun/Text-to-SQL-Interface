@@ -20,3 +20,5 @@ __pycache__/
 
 #DEMO FILE
 demo_self_healing.py
+
+/app/frontend/config.js
